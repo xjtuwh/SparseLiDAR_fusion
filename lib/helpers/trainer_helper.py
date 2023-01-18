@@ -20,6 +20,16 @@ from lib.models.pointNet import PointNetDetector,CornerLoss,PointNet_xyz, Center
 from lib.helpers.disp2prob import LaplaceDisp2Prob
 from lib.losses.disparity_loss.stereo_focal_loss import StereoFocalLoss
 
+def laplacian_aleatoric_uncertainty_loss(input, target, log_variance, reduction='mean'):
+    '''
+    References:
+        MonoPair: Monocular 3D Object Detection Using Pairwise Spatial Relationships, CVPR'20
+        Geometry and Uncertainty in Deep Learning for Computer Vision, University of Cambridge
+    '''
+    assert reduction in ['mean', 'sum']
+    loss = 1.4142 * torch.exp(-log_variance) * torch.abs(input - target) + log_variance
+    return loss.mean() if reduction == 'mean' else loss.sum()
+
 class Trainer(object):
     def __init__(self,
                  cfg,
@@ -341,10 +351,16 @@ class Trainer(object):
             # train one batch
             self.optimizer.zero_grad()
             outputs,left_features,dense_depth = self.model(inputs,targets['sparse_dep'],targets)
-            val_pixels = (targets['dep_map'] > 1e-3).float().cuda()
-            # depth_no_trans = (torch.sum(targets['mask_3d'],dim=1)>0).float().cuda()
-            depth_loss = targets['dep_map'] * val_pixels - dense_depth * val_pixels
-            depth_loss = (depth_loss ** 2).mean()
+            #-----------------------------------------------------------------------------------------------------
+            val_pixels = (targets['dep_map'] > 1e-3).unsqueeze(1)
+            depth_input, depth_log_variance = dense_depth[:, 0:1], dense_depth[:, 1:2]
+            depth_loss = laplacian_aleatoric_uncertainty_loss(depth_input[val_pixels], \
+                                        targets['dep_map'].unsqueeze(1)[val_pixels], depth_log_variance[val_pixels])
+            #-----------------------------------------------------------------------------------------------------
+            # val_pixels = (targets['dep_map'] > 1e-3).float().cuda()
+            # depth_loss = targets['dep_map'] * val_pixels - dense_depth * val_pixels
+            # depth_loss = (depth_loss ** 2).mean()
+
 
             for (k,v) in outputs.items():
                 outputs_train[k]=v.clone()
@@ -387,7 +403,8 @@ class Trainer(object):
             batch_dict['calib_r'] = info['P3']
             batch_dict['left_image_feature'] = left_features
             batch_dict['right_image_feature'] = left_features
-            disparity_pro, pro_unnorm = LaplaceDisp2Prob(80, dense_depth, variance=self.model.sigma,
+            sigma = torch.exp(-depth_log_variance)
+            disparity_pro, pro_unnorm = LaplaceDisp2Prob(80, depth_input, variance=sigma,
                                              start_disp=0, dilation=1).getProb()
             # label = targets['dep_map'].cuda().unsqueeze(1)
             # depth_loss = self.deppro_loss(pro_unnorm, label, variance=0.5)

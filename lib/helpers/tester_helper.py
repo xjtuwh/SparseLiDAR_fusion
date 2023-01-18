@@ -116,7 +116,9 @@ class Tester(object):
             targets['sparse_dep']=targets['sparse_dep'].to(self.device)
             # batch_dict['dep_map'] = disparity_pro
             outputs,left_features,dense_depth = self.model(inputs,targets['sparse_dep'], mode='test')
-            disparity_pro, _ = LaplaceDisp2Prob(80, dense_depth, variance=self.model.sigma,
+            depth_input, depth_log_variance = dense_depth[:, 0:1], dense_depth[:, 1:2]
+            sigma = torch.exp(-depth_log_variance)
+            disparity_pro, _ = LaplaceDisp2Prob(80, depth_input, variance=sigma,
                                              start_disp=0, dilation=1).getProb()
             # for (k,v) in outputs.items():
             #     outputs_train[k]=v.clone()
