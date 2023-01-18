@@ -287,7 +287,7 @@ class PoseResNet(nn.Module):
         self.guide3 = Guide(128, 128, nn.BatchNorm2d, 3)
         self.guide4 = Guide(256, 256, nn.BatchNorm2d, 3)
         self.ref = BasicBlock(64, 64, act=False)
-        self.conv = nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1)
+        self.conv = nn.Conv2d(64, 2, kernel_size=3, stride=1, padding=1)
         # self._initialize_weights()
 
         # used for deconv layers
